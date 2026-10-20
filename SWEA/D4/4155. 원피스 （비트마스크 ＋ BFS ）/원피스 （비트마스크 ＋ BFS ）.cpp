@@ -1,7 +1,7 @@
 #include <iostream>
 #include <unordered_map>
 
-#define MAX_QUE_SIZE 10000
+#define MAX_QUE_SIZE 50000
 
 using namespace std;
 
@@ -111,10 +111,10 @@ void reset() {
 int bfs() {
 	reset();
 	visited[start.y][start.x][0] = true;
-	que[(rear++ % MAX_QUE_SIZE)] = { start, 0, 0 };
+	que[rear++] = { start, 0, 0 };
 
 	while (front < rear) {
-		QUE_INFO& cur = que[(front++ % MAX_QUE_SIZE)];
+		QUE_INFO& cur = que[front++];
 
 		// 목적지 도착 시 탐색 중지
 		if (cur.pos.is_same(dist)) {
@@ -133,7 +133,7 @@ int bfs() {
 
 
 			int new_mask = update_key(ny, nx, cur.mask, map[ny][nx]);
-			que[(rear++ % MAX_QUE_SIZE)] = { { ny, nx }, new_mask, cur.time + 1 };
+			que[rear++] = { { ny, nx }, new_mask, cur.time + 1 };
 		}
 	}
 
