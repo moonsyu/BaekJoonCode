@@ -72,8 +72,8 @@ bool can_move(int y, int x, int mask) {
 
 
 /* 키 획득 시 마스크 갱신 */
-int update_key(int y, int x, int mask, char key) {
-	if (map[y][x] >= 'a' && map[y][x] <= 'f') {
+int update_key(int mask, char key) {
+	if (key >= 'a' && key <= 'f') {
 		mask |= (1 << (key - 'a'));
 	}
 
@@ -132,7 +132,7 @@ int bfs() {
 			visited[ny][nx][cur.mask] = true;
 
 
-			int new_mask = update_key(ny, nx, cur.mask, map[ny][nx]);
+			int new_mask = update_key(cur.mask, map[ny][nx]);
 			que[rear++] = { { ny, nx }, new_mask, cur.time + 1 };
 		}
 	}
