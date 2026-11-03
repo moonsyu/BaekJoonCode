@@ -6,7 +6,7 @@
 
 #define MAX_QUE_SIZE 1600
 #define MAX_PANEL 16 // 0번: 엘리베이터, 1 ~ 15번: 패널
-#define MAX_MASK (1 << 15)
+#define MAX_MASK (1 << 16)
 
 using namespace std;
 
@@ -14,16 +14,21 @@ struct Pos {
 	int y, x;
 };
 
+struct PANEL_INFO {
+	int y, x;
+	int floor;
+};
+
 int n, m; // 격자 크기
 int panel_cnt; // 패널 개수
+vector<string> map; // 격자 정보
 
-Pos panel_pos[MAX_PANEL]; // 패널 위치
-int panel_floor[MAX_PANEL]; // 패널 층
+PANEL_INFO panel_info[MAX_PANEL]; // 패널 정보
 
-// panel_dist[0][i] : 엘리베이터 ~ i번 패널 거리, panel_dist[i][j] : 같은 층 i번 ~ j번 패널 거리
+// 패널 간 거리 (0번: 엘리베이터, 1 ~ 15번: 패널)
 int panel_dist[MAX_PANEL][MAX_PANEL];
 
-// floor_panels[f] : f층에 있는 패널 번호
+// floor_panels[h] : h층에 있는 패널 번호
 vector<vector<int>> floor_panels;
 
 // pre_mask[b] : b번 패널 활성화 전에 활성화해야 하는 패널의 비트마스크
@@ -40,7 +45,7 @@ int dx[] = { 0, 1, 0, -1 };
 
 
 /* 이동 가능한지 확인 */
-bool can_move(vector<string>& grid, int y, int x) {
+bool can_move(int y, int x) {
 	// 맵 범위 확인
 	if (y < 0 || y >= n || x < 0 || x >= m) {
 		return false;
@@ -52,7 +57,7 @@ bool can_move(vector<string>& grid, int y, int x) {
 	}
 
 	// 폐쇄 구역인지 확인
-	if (grid[y][x] == '#') {
+	if (map[y][x] == '#') {
 		return false;
 	}
 
@@ -61,21 +66,28 @@ bool can_move(vector<string>& grid, int y, int x) {
 
 
 /* start에서 모든 칸까지의 거리 계산 */
-void bfs(vector<string>& grid, Pos start) {
-	memset(grid_dist, -1, sizeof(grid_dist));
+void bfs(Pos start) {
+	// 초기화
 	front = rear = 0;
+	for (int i = 0; i < n; i++) {
+		for (int j = 0; j < m; j++) {
+			grid_dist[i][j] = -1;
+		}
+	}
 
+	// 방문 표시
 	grid_dist[start.y][start.x] = 0;
 	que[rear++] = start;
 
+	// BFS 탐색
 	while (front < rear) {
-		Pos cur = que[front++];
+		Pos& cur = que[front++];
 
 		for (int i = 0; i < 4; i++) {
 			int ny = cur.y + dy[i];
 			int nx = cur.x + dx[i];
 
-			if (!can_move(grid, ny, nx)) {
+			if (!can_move(ny, nx)) {
 				continue;
 			}
 
@@ -86,68 +98,79 @@ void bfs(vector<string>& grid, Pos start) {
 }
 
 
-/* 1. 엘리베이터 ~ 각 패널 거리 계산 */
-void set_elevator_dist(vector<string>& grid) {
-	Pos elevator = { 0, 0 };
-
+/* 엘리베이터 위치 반환 */
+Pos get_elevator_pos() {
 	for (int i = 0; i < n; i++) {
 		for (int j = 0; j < m; j++) {
-			if (grid[i][j] == '@') {
-				elevator = { i, j };
+			if (map[i][j] == '@') {
+				return { i, j };
 			}
 		}
 	}
 
-	bfs(grid, elevator);
+	return { 0, 0 }; // 엘리베이터는 항상 존재하므로 도달하지 않음
+}
 
+
+/* 엘리베이터 ~ 각 패널 거리 계산 */
+void set_elevator_dist() {
+	bfs(get_elevator_pos());
+
+	// 엘리베이터 ~ i번 패널까지의 거리 저장
 	for (int i = 1; i <= panel_cnt; i++) {
-		panel_dist[0][i] = grid_dist[panel_pos[i].y][panel_pos[i].x];
+		panel_dist[0][i] = grid_dist[panel_info[i].y][panel_info[i].x];
 		panel_dist[i][0] = panel_dist[0][i];
 	}
 }
 
 
-/* 3. 패널 정보를 층 별로 저장 */
+/* 패널 정보를 층 별로 저장 */
 void set_floor_panels(int h, vector<vector<int>>& panels) {
+	// vector 초기화
 	floor_panels.assign(h + 1, vector<int>());
 
+	// 패널 정보 전처리
 	for (int i = 1; i <= panel_cnt; i++) {
-		panel_floor[i] = panels[i - 1][0];
-		panel_pos[i] = { panels[i - 1][1] - 1, panels[i - 1][2] - 1 };
+		// 패널 정보: y, x, floor
+		panel_info[i] = { panels[i - 1][1] - 1, panels[i - 1][2] - 1, panels[i - 1][0] };
 
-		floor_panels[panel_floor[i]].push_back(i);
+		// 층 별 패널 번호 저장
+		floor_panels[panel_info[i].floor].push_back(i);
 	}
 }
 
 
-/* 4. 같은 층에 있는 패널 간 거리 계산 */
-void set_same_floor_dist(vector<string>& grid) {
-	for (int f = 1; f < floor_panels.size(); f++) {
+/* 같은 층에 있는 패널 간 거리 계산 */
+void set_same_floor_dist() {
+	// h: 층 
+	for (int h = 1; h < floor_panels.size(); h++) {
 		// 패널이 2개 이상인 층만 확인
-		if (floor_panels[f].size() < 2) {
+		if (floor_panels[h].size() < 2) {
 			continue;
 		}
 
-		for (int i = 0; i < floor_panels[f].size(); i++) {
-			int from = floor_panels[f][i];
-			bfs(grid, panel_pos[from]);
+		// 같은 층에 있는 패널 간 거리 계산
+		for (int i = 0; i < floor_panels[h].size(); i++) {
+			int from = floor_panels[h][i];
+			bfs({ panel_info[from].y, panel_info[from].x });
 
-			for (int j = 0; j < floor_panels[f].size(); j++) {
-				int to = floor_panels[f][j];
-				panel_dist[from][to] = grid_dist[panel_pos[to].y][panel_pos[to].x];
+			// from -> to 거리 저장
+			for (int j = 0; j < floor_panels[h].size(); j++) {
+				int to = floor_panels[h][j];
+				panel_dist[from][to] = grid_dist[panel_info[to].y][panel_info[to].x];
 			}
 		}
 	}
 }
 
 
-/* 5. seqs를 돌며 선행 패널 비트 설정 */
+/* seqs를 돌며 선행 패널 비트 설정 */
 void set_pre_mask(vector<vector<int>>& seqs) {
 	for (int i = 0; i < seqs.size(); i++) {
 		int a = seqs[i][0];
 		int b = seqs[i][1];
 
-		pre_mask[b] |= (1 << (a - 1));
+		pre_mask[b] |= (1 << a);
 	}
 }
 
@@ -155,12 +178,13 @@ void set_pre_mask(vector<vector<int>>& seqs) {
 /* from번 ~ to번 패널 이동 시간 */
 int get_time(int from, int to) {
 	// 같은 층
-	if (panel_floor[from] == panel_floor[to]) {
+	if (panel_info[from].floor == panel_info[to].floor) {
 		return panel_dist[from][to];
 	}
 
 	// 다른 층은 엘리베이터를 거쳐야 함
-	return panel_dist[from][0] + abs(panel_floor[from] - panel_floor[to]) + panel_dist[0][to];
+	int floor_move_time = abs(panel_info[from].floor - panel_info[to].floor);
+	return panel_dist[from][0] + floor_move_time + panel_dist[0][to];
 }
 
 
@@ -168,11 +192,9 @@ int get_time(int from, int to) {
 int time : 현재까지 걸린 시간
 int pos : 현재 패널 번호
 int mask : 패널 활성화 정보 (활성화 시 0, 비활성화 시 1)
-int can_visit[] : 각 패널의 남은 선행 패널 비트마스크 (0이면 방문 가능)
 */
 struct PQ_INFO {
 	int time, pos, mask;
-	int can_visit[MAX_PANEL];
 
 	bool operator<(const PQ_INFO& other) const {
 		return time > other.time; // 거리가 짧은 것 먼저
@@ -182,18 +204,13 @@ struct PQ_INFO {
 int best_time[MAX_MASK][MAX_PANEL]; // 같은 상태를 더 느리게 다시 탐색하지 않기 위한 배열
 
 
-/* 6. 1번 패널부터 다익스트라 */
+/* 탐색 시작 */
 int dijkstra() {
 	memset(best_time, 0x3f, sizeof(best_time));
 	priority_queue<PQ_INFO> pq;
 
-	PQ_INFO start;
-	start.time = 0;
-	start.pos = 1;
-	start.mask = (1 << panel_cnt) - 1; // 시작 시 모든 패널 비활성화
-	for (int i = 0; i < MAX_PANEL; i++) {
-		start.can_visit[i] = pre_mask[i];
-	}
+	// 1번 패널 위치에서 출발, 모든 패널 비활성화 상태
+	PQ_INFO start = { 0, 1, (1 << (panel_cnt + 1)) - 2 };
 
 	best_time[start.mask][start.pos] = 0;
 	pq.push(start);
@@ -213,33 +230,25 @@ int dijkstra() {
 		}
 
 		for (int i = 1; i <= panel_cnt; i++) {
-			int bit = (1 << (i - 1));
+			int bit = (1 << i);
 
 			// 이미 활성화한 패널
 			if (!(cur.mask & bit)) {
 				continue;
 			}
 
-			// 선행 패널이 남아 있는 패널
-			if (cur.can_visit[i] != 0) {
+			// 선행 패널 중 아직 비활성화된 패널이 있음
+			if (pre_mask[i] & cur.mask) {
 				continue;
 			}
 
-			PQ_INFO next = cur;
-			next.time = cur.time + get_time(cur.pos, i);
-			next.pos = i;
-			next.mask = cur.mask & ~bit;
-
+			// 다음 상태 계산
+			PQ_INFO next = { cur.time + get_time(cur.pos, i), i, cur.mask & ~bit };
 			if (next.time >= best_time[next.mask][next.pos]) {
 				continue;
 			}
+
 			best_time[next.mask][next.pos] = next.time;
-
-			// i번 패널을 선행 목록에서 제거
-			for (int j = 1; j <= panel_cnt; j++) {
-				next.can_visit[j] &= ~bit;
-			}
-
 			pq.push(next);
 		}
 	}
@@ -249,21 +258,18 @@ int dijkstra() {
 
 
 int solution(int h, vector<string> grid, vector<vector<int>> panels, vector<vector<int>> seqs) {
-	int answer = 0;
-
 	n = grid.size();
 	m = grid[0].size();
 	panel_cnt = panels.size();
+	map = grid;
 
 	memset(panel_dist, 0, sizeof(panel_dist));
 	memset(pre_mask, 0, sizeof(pre_mask));
 
 	set_floor_panels(h, panels);
-	set_elevator_dist(grid);
-	set_same_floor_dist(grid);
+	set_elevator_dist();
+	set_same_floor_dist();
 	set_pre_mask(seqs);
 
-	answer = dijkstra();
-
-	return answer;
+	return dijkstra();
 }
